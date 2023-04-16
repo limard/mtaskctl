@@ -2,29 +2,9 @@ package mtaskctl
 
 import (
 	"fmt"
-	"sync/atomic"
 	"testing"
 	"time"
 )
-
-func Test_test(t *testing.T) {
-	c := make(chan struct{})
-	go func() {
-		<-c
-		fmt.Println("ok")
-	}()
-
-	c = make(chan struct{}, 3)
-	fmt.Println(len(c), cap(c))
-
-	time.Sleep(100 * time.Millisecond)
-	c <- struct{}{}
-	fmt.Println(len(c), cap(c))
-
-	time.Sleep(100 * time.Millisecond)
-	c <- struct{}{}
-	fmt.Println(len(c), cap(c))
-}
 
 func Test_Task(t *testing.T) {
 	ctl := NewTaskCtl(2)
@@ -61,13 +41,4 @@ func Test_Task(t *testing.T) {
 
 	fmt.Println("wait")
 	ctl.Wait()
-}
-
-func Test_value(t *testing.T) {
-	v := atomic.Value{}
-	v.Store(1)
-	v.Store(2)
-	fmt.Println(v.Load())
-	fmt.Println(v.Load())
-	fmt.Println(v.Load())
 }
