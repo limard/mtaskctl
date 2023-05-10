@@ -1,6 +1,7 @@
 package mtaskctl
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"testing"
@@ -17,30 +18,35 @@ func Test_Task(t *testing.T) {
 		mu.Unlock()
 	}
 
-	ctl := NewTaskCtl(2)
+	ctl := NewTaskCtl([8]int{2})
 
 	go func() {
 		time.Sleep(2 * time.Second)
-		pf("======= pause =======")
+		pf("======= pause1 =======")
 		ctl.TaskPause()
+		pf("======= pause2 =======")
 
 		time.Sleep(8 * time.Second)
-		pf("======= resume =======")
+		pf("======= resume1 =======")
 		ctl.TaskResume()
+		pf("======= resume2 =======")
 
 		// time.Sleep(8 * time.Second) // start_error
 		time.Sleep(5 * time.Second) // check_error
-		pf("======= pause =======")
+		pf("======= pause1 =======")
 		ctl.TaskPause()
+		pf("======= pause2 =======")
 
 		time.Sleep(8 * time.Second)
-		pf("======= cancel =======")
+		pf("======= cancel1 =======")
 		ctl.TaskCancel(nil)
+		pf("======= cancel2 =======")
 	}()
 
 	for i := 0; i < 10; i++ {
 		pf(i, "start1")
-		if ctl.Start() != nil {
+		index, e := ctl.Start()
+		if e != nil {
 			pf(i, "start-error")
 			break
 		}
@@ -49,7 +55,7 @@ func Test_Task(t *testing.T) {
 		go func(i int) {
 			defer func() {
 				pf(i, "\t\t\tdone")
-				ctl.Done()
+				ctl.Done(index)
 			}()
 
 			time.Sleep(3 * time.Second)
@@ -67,4 +73,19 @@ func Test_Task(t *testing.T) {
 	pf("======= wait =======")
 	ctl.Wait()
 	ctl.Close()
+}
+
+func Test_do(t *testing.T) {
+	ctl := NewTaskCtl([8]int{2, 3})
+
+	ctl.Do(func(n, channel int, cancel context.CancelFunc) {
+		fmt.Println(n, channel, "start")
+		if n == 10 {
+			cancel()
+			fmt.Println("cancel")
+			return
+		}
+		time.Sleep(1 * time.Second)
+		fmt.Println(n, channel, "       --- end")
+	})
 }
