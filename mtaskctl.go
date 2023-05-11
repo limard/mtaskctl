@@ -8,25 +8,28 @@ import (
 
 var Canceled = errors.New("canceled")
 
-const SPOOL_NUMBER = 8
+const CHANNEL_NUMBER = 8
 
 type MTaskCtl struct {
-	n      [SPOOL_NUMBER]int        // 当前并发数量
-	max    [SPOOL_NUMBER]int        // 最大并发数量
-	ch     [SPOOL_NUMBER]chan error // 控制数量，cancel后error为非空
-	mu     sync.Mutex               //
-	e      error                    // 运行/取消状态
-	pa     bool                     // pause 暂停状态
-	resume chan struct{}            // 恢复信号
+	n      [CHANNEL_NUMBER]int        // 当前并发数量
+	max    [CHANNEL_NUMBER]int        // 最大并发数量
+	ch     [CHANNEL_NUMBER]chan error // 控制数量，cancel后error为非空
+	mu     sync.Mutex                 //
+	e      error                      // 运行/取消状态
+	pa     bool                       // pause 暂停状态
+	resume chan struct{}              // 恢复信号
 }
 
-func NewTaskCtl(max [SPOOL_NUMBER]int) *MTaskCtl {
-	task := &MTaskCtl{
-		max:    max,
-		resume: make(chan struct{}),
+func NewTaskCtl(max []int) *MTaskCtl {
+	if len(max) > CHANNEL_NUMBER {
+		panic("不支持8个以上的通道")
 	}
 
+	task := &MTaskCtl{
+		resume: make(chan struct{}),
+	}
 	for i, v := range max {
+		task.max[i] = v
 		task.ch[i] = make(chan error, v)
 		for j := 0; j < v; j++ {
 			task.ch[i] <- nil
@@ -35,7 +38,7 @@ func NewTaskCtl(max [SPOOL_NUMBER]int) *MTaskCtl {
 	return task
 }
 
-// 代理Start、Check、Done
+// 代理 Start Done Wait 的功能，可以在callback中调用 Check
 func (t *MTaskCtl) Do(cb func(i, channel int, cancel context.CancelFunc)) {
 	ctx, cancel := context.WithCancel(context.Background())
 	for i := 0; ; i++ {
@@ -53,6 +56,9 @@ func (t *MTaskCtl) Do(cb func(i, channel int, cancel context.CancelFunc)) {
 		}(i, channel)
 	}
 	t.Wait()
+
+	// cancel()写在这儿没特殊意义，但是不写的话会有警告
+	// the cancel function is not used on all paths (possible context leak)lostcancel
 	cancel()
 }
 
@@ -108,7 +114,7 @@ func (t *MTaskCtl) Done(index int) {
 
 // Wait等待所有线程执行完
 func (t *MTaskCtl) Wait() {
-	for i := 0; i < SPOOL_NUMBER; i++ {
+	for i := 0; i < CHANNEL_NUMBER; i++ {
 		for t.n[i] != 0 {
 			<-t.ch[i]
 		}
@@ -117,7 +123,7 @@ func (t *MTaskCtl) Wait() {
 
 // Close关闭
 func (t *MTaskCtl) Close() {
-	for i := 0; i < SPOOL_NUMBER; i++ {
+	for i := 0; i < CHANNEL_NUMBER; i++ {
 		if t.ch[i] != nil {
 			close(t.ch[i])
 			t.ch[i] = nil
@@ -145,7 +151,7 @@ func (t *MTaskCtl) TaskCancel(cause error) {
 func (t *MTaskCtl) TaskPause() {
 	t.mu.Lock()
 	t.pa = true
-	for i := 0; i < SPOOL_NUMBER; i++ {
+	for i := 0; i < CHANNEL_NUMBER; i++ {
 		for j := t.n[i]; j < t.max[i]; j++ {
 			<-t.ch[i]
 		}
@@ -157,7 +163,7 @@ func (t *MTaskCtl) TaskPause() {
 func (t *MTaskCtl) TaskResume() {
 	t.mu.Lock()
 	t.pa = false
-	for i := 0; i < SPOOL_NUMBER; i++ {
+	for i := 0; i < CHANNEL_NUMBER; i++ {
 		for j := t.n[i]; j < t.max[i]; j++ {
 			t.ch[i] <- t.e
 		}

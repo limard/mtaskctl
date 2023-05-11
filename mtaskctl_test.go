@@ -18,7 +18,7 @@ func Test_Task(t *testing.T) {
 		mu.Unlock()
 	}
 
-	ctl := NewTaskCtl([8]int{2})
+	ctl := NewTaskCtl([]int{2})
 
 	go func() {
 		time.Sleep(2 * time.Second)
@@ -76,7 +76,7 @@ func Test_Task(t *testing.T) {
 }
 
 func Test_do(t *testing.T) {
-	ctl := NewTaskCtl([8]int{2, 3})
+	ctl := NewTaskCtl([]int{2, 3})
 
 	ctl.Do(func(n, channel int, cancel context.CancelFunc) {
 		fmt.Println(n, channel, "start")
