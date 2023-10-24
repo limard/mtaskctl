@@ -42,15 +42,23 @@ func NewTaskCtl(max []int) *MTaskCtl {
 	return task
 }
 
-func (t *MTaskCtl) Do(cb func(index, channel int)) {
+// perHandler 预分配的handler，外侧决定是否继续
+// handle 实际处理的handler，在协程中执行
+func (t *MTaskCtl) Do(perHandler func(index int) bool, handle func(index, channel int)) {
 	for index := 0; ; index++ {
+		// 外侧决定是否需要继续
+		if !perHandler(index) {
+			break
+		}
+
+		// 分配/等待channel，也可能被取消
 		channel, e := t.assign()
 		if e != nil {
 			break
 		}
 
 		go func(i, channel int) {
-			cb(i, channel)
+			handle(i, channel)
 			t.done(channel)
 		}(index, channel)
 	}

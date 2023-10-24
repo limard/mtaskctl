@@ -34,7 +34,12 @@ func Test_TaskDo(t *testing.T) {
 		pf.p("======= cancel =======")
 	}()
 
-	ctl.Do(func(index, channel int) {
+	ctl.Do(func(index int) bool {
+		if index > 0 {
+			return false
+		}
+		return true
+	}, func(index, channel int) {
 		pf.p("index:", index, " channel:", channel, "start")
 		if index == 10 {
 			ctl.Cancel(nil)
