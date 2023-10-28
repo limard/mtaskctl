@@ -34,35 +34,34 @@ func Test_TaskDo(t *testing.T) {
 		pf.p("======= cancel =======")
 	}()
 
-	ctl.Do(func(index int) bool {
-		if index > 0 {
-			return false
+	for index := 0; ; index++ {
+		channel, e := ctl.New()
+		if e != nil {
+			break
 		}
-		return true
-	}, func(index, channel int) {
-		pf.p("index:", index, " channel:", channel, "start")
-		if index == 10 {
-			ctl.Cancel(nil)
-			pf.p("cancel")
-			return
-		}
+		go func(channel, index int) {
+			defer ctl.Done(channel)
 
-		time.Sleep(1 * time.Second)
+			time.Sleep(1 * time.Second)
 
-		if e := ctl.Check(); e != nil {
-			pf.p("check out", e.Error())
-			return
-		}
+			if e := ctl.Check(); e != nil {
+				pf.p("check out", e.Error())
+				return
+			}
 
-		time.Sleep(1 * time.Second)
+			time.Sleep(1 * time.Second)
 
-		if e := ctl.Check(); e != nil {
-			pf.p("check out", e.Error())
-			return
-		}
+			if e := ctl.Check(); e != nil {
+				pf.p("check out", e.Error())
+				return
+			}
 
-		pf.p("index:", index, " channel:", channel, "--- end")
-	})
+			pf.p("index:", index, " channel:", channel, "--- end")
+
+		}(channel, index)
+	}
+	ctl.Wait()
+
 	pf.p("Finished")
 }
 

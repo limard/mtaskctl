@@ -42,32 +42,24 @@ func NewTaskCtl(max []int) *MTaskCtl {
 	return task
 }
 
-// perHandler 预分配的handler，外侧决定是否继续
-// handle 实际处理的handler，在协程中执行
-func (t *MTaskCtl) Do(perHandler func(index int) bool, handle func(index, channel int)) {
-	for index := 0; ; index++ {
-		// 外侧决定是否需要继续
-		if !perHandler(index) {
-			break
-		}
-
-		// 分配/等待channel，也可能被取消
-		channel, e := t.assign()
-		if e != nil {
-			break
-		}
-
-		go func(i, channel int) {
-			handle(i, channel)
-			t.done(channel)
-		}(index, channel)
-	}
-	t.wait()
-}
+// func example() {
+// 	ctl := NewTaskCtl([]int{8})
+// 	for {
+// 		channel, e := ctl.New()
+// 		if e != nil {
+// 			break
+// 		}
+// 		go func(channel int) {
+// 			// do something
+// 			ctl.Done(channel)
+// 		}(channel)
+// 	}
+// 	ctl.Wait()
+// }
 
 // 分配一个可用的channel
 // nil为正常继续，error为终止（Cancel），并发数量不足或pause时将阻塞
-func (t *MTaskCtl) assign() (channel int, e error) {
+func (t *MTaskCtl) New() (channel int, e error) {
 	// 如果已经取消，则直接返回
 	if e = t.Check(); e != nil {
 		return 0, e
@@ -110,19 +102,19 @@ func (t *MTaskCtl) assign() (channel int, e error) {
 	return
 }
 
-// 完成后插入新元素
-func (t *MTaskCtl) done(index int) {
+// 完成后调用
+func (t *MTaskCtl) Done(channel int) {
 	t.mtxN.Lock()
-	t.n[index]--
+	t.n[channel]--
 	t.mtxN.Unlock()
 
-	if len(t.ch[index]) < cap(t.ch[index]) {
-		t.ch[index] <- struct{}{}
+	if len(t.ch[channel]) < cap(t.ch[channel]) {
+		t.ch[channel] <- struct{}{}
 	}
 }
 
 // 等待所有线程执行完
-func (t *MTaskCtl) wait() {
+func (t *MTaskCtl) Wait() {
 	for i := 0; i < CHANNEL_NUMBER; i++ {
 		for t.n[i] > 0 {
 			<-t.ch[i]
