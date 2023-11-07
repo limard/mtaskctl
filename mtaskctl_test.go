@@ -2,6 +2,7 @@ package mtaskctl
 
 import (
 	"fmt"
+	"math/rand"
 	"sync"
 	"testing"
 	"time"
@@ -78,7 +79,32 @@ func newpf() *pf {
 
 func (t *pf) p(a ...any) {
 	t.mu.Lock()
-	fmt.Printf("%6.2fs ", float64(time.Now().Sub(t.start).Milliseconds())/1000)
+	fmt.Printf("%6.2fs ", float64(time.Since(t.start).Milliseconds())/1000)
 	fmt.Println(a...)
 	t.mu.Unlock()
+}
+
+// 测试并发
+func Test_coo(t *testing.T) {
+	pgm_start := time.Now()
+	ctl := NewTaskCtl([]int{8})
+	for index := 0; index < 20; index++ {
+		channel, e := ctl.New()
+		if e != nil {
+			break
+		}
+		go func(channel, index int) {
+			defer ctl.Done(channel)
+
+			start := time.Now()
+			n := rand.Intn(5) + 1
+			time.Sleep(time.Duration(n) * time.Second)
+			// time.Sleep(2 * time.Second)
+
+			fmt.Printf("index:%d \tchannel:%d \t start:%d \tduration:%d \n",
+				index, channel, start.Sub(pgm_start).Milliseconds(), time.Since(start).Milliseconds())
+		}(channel, index)
+	}
+	ctl.Wait()
+	ctl.Close()
 }

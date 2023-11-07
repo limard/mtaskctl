@@ -5,9 +5,9 @@ import (
 	"sync"
 )
 
-var Canceled = errors.New("canceled")
+var ErrCanceled = errors.New("canceled")
 
-const CHANNEL_NUMBER = 8
+const CHANNEL_NUMBER = 16
 
 type MTaskCtl struct {
 	max [CHANNEL_NUMBER]int // 最大并发数量
@@ -20,18 +20,19 @@ type MTaskCtl struct {
 	pause     bool          // pause 暂停状态
 	pauseChan chan struct{} // 暂停时有chan造成阻塞，恢复后close解除阻塞
 	cancel    error         // 运行/取消状态
+	waitGroup sync.WaitGroup
 }
 
-func NewTaskCtl(max []int) *MTaskCtl {
-	if len(max) > CHANNEL_NUMBER {
-		panic("不支持8个以上的通道")
+func NewTaskCtl(maxs []int) *MTaskCtl {
+	if len(maxs) > CHANNEL_NUMBER {
+		panic("不支持16以上的通道")
 	}
 
 	task := &MTaskCtl{
 		pause:     true,
 		pauseChan: make(chan struct{}),
 	}
-	for i, v := range max {
+	for i, v := range maxs {
 		task.max[i] = v
 		task.ch[i] = make(chan struct{}, v)
 		for j := 0; j < v; j++ {
@@ -60,8 +61,11 @@ func NewTaskCtl(max []int) *MTaskCtl {
 // 分配一个可用的channel
 // nil为正常继续，error为终止（Cancel），并发数量不足或pause时将阻塞
 func (t *MTaskCtl) New() (channel int, e error) {
+	t.waitGroup.Add(1)
+
 	// 如果已经取消，则直接返回
 	if e = t.Check(); e != nil {
+		t.waitGroup.Done()
 		return 0, e
 	}
 
@@ -84,16 +88,34 @@ func (t *MTaskCtl) New() (channel int, e error) {
 		channel = 6
 	case _, ok = <-t.ch[7]:
 		channel = 7
+	case _, ok = <-t.ch[8]:
+		channel = 8
+	case _, ok = <-t.ch[9]:
+		channel = 9
+	case _, ok = <-t.ch[10]:
+		channel = 10
+	case _, ok = <-t.ch[11]:
+		channel = 11
+	case _, ok = <-t.ch[12]:
+		channel = 12
+	case _, ok = <-t.ch[13]:
+		channel = 13
+	case _, ok = <-t.ch[14]:
+		channel = 14
+	case _, ok = <-t.ch[15]:
+		channel = 15
 	}
 
 	// 如果已经取消，则直接返回
 	if e = t.Check(); e != nil {
+		t.waitGroup.Done()
 		return 0, e
 	}
 
 	// 如果通道关闭也返回
 	if !ok {
-		return 0, Canceled
+		t.waitGroup.Done()
+		return 0, ErrCanceled
 	}
 
 	t.mtxN.Lock()
@@ -111,15 +133,17 @@ func (t *MTaskCtl) Done(channel int) {
 	if len(t.ch[channel]) < cap(t.ch[channel]) {
 		t.ch[channel] <- struct{}{}
 	}
+	t.waitGroup.Done()
 }
 
 // 等待所有线程执行完
 func (t *MTaskCtl) Wait() {
-	for i := 0; i < CHANNEL_NUMBER; i++ {
-		for t.n[i] > 0 {
-			<-t.ch[i]
-		}
-	}
+	t.waitGroup.Wait()
+	// for i := 0; i < CHANNEL_NUMBER; i++ {
+	// 	for t.n[i] > 0 {
+	// 		<-t.ch[i]
+	// 	}
+	// }
 }
 
 // Check在运行routine过程中执行，检查是否继续。
@@ -147,7 +171,7 @@ func (t *MTaskCtl) Cancel(cause error) {
 	if cause != nil {
 		t.cancel = cause
 	} else {
-		t.cancel = Canceled
+		t.cancel = ErrCanceled
 	}
 	t.Resume()
 }
