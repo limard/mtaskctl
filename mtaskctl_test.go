@@ -41,18 +41,18 @@ func Test_TaskDo(t *testing.T) {
 			break
 		}
 		go func(channel, index int) {
-			defer ctl.Done(channel)
+			defer ctl.Recycle(channel)
 
 			time.Sleep(1 * time.Second)
 
-			if e := ctl.Check(); e != nil {
+			if e := ctl.Err(); e != nil {
 				pf.p("check out", e.Error())
 				return
 			}
 
 			time.Sleep(1 * time.Second)
 
-			if e := ctl.Check(); e != nil {
+			if e := ctl.Err(); e != nil {
 				pf.p("check out", e.Error())
 				return
 			}
@@ -94,7 +94,7 @@ func Test_coo(t *testing.T) {
 			break
 		}
 		go func(channel, index int) {
-			defer ctl.Done(channel)
+			defer ctl.Recycle(channel)
 
 			start := time.Now()
 			n := rand.Intn(5) + 1
@@ -107,4 +107,23 @@ func Test_coo(t *testing.T) {
 	}
 	ctl.Wait()
 	ctl.Close()
+	time.Sleep(2 * time.Second)
+}
+
+func Benchmark_(b *testing.B) {
+	cnter := [2]int{}
+	ctl := NewTaskCtl([]int{4, 4})
+	for i := 0; i < b.N; i++ {
+		channel, e := ctl.New()
+		if e != nil {
+			break
+		}
+		go func(channel, index int) {
+			cnter[channel]++
+			ctl.Recycle(channel)
+		}(channel, i)
+	}
+	ctl.Wait()
+	ctl.Close()
+	fmt.Println(cnter)
 }

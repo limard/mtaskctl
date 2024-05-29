@@ -3,6 +3,7 @@ package mtaskctl
 import (
 	"errors"
 	"sync"
+	"time"
 )
 
 var ErrCanceled = errors.New("canceled")
@@ -52,7 +53,7 @@ func NewTaskCtl(maxs []int) *MTaskCtl {
 // 		}
 // 		go func(channel int) {
 // 			// do something
-// 			ctl.Done(channel)
+// 			ctl.Recycle(channel)
 // 		}(channel)
 // 	}
 // 	ctl.Wait()
@@ -64,7 +65,7 @@ func (t *MTaskCtl) New() (channel int, e error) {
 	t.waitGroup.Add(1)
 
 	// 如果已经取消，则直接返回
-	if e = t.Check(); e != nil {
+	if e = t.Err(); e != nil {
 		t.waitGroup.Done()
 		return 0, e
 	}
@@ -107,7 +108,7 @@ func (t *MTaskCtl) New() (channel int, e error) {
 	}
 
 	// 如果已经取消，则直接返回
-	if e = t.Check(); e != nil {
+	if e = t.Err(); e != nil {
 		t.waitGroup.Done()
 		return 0, e
 	}
@@ -125,7 +126,8 @@ func (t *MTaskCtl) New() (channel int, e error) {
 }
 
 // 完成后调用
-func (t *MTaskCtl) Done(channel int) {
+func (t *MTaskCtl) Recycle(channel int) {
+	// fmt.Println("Done", channel)
 	t.mtxN.Lock()
 	t.n[channel]--
 	t.mtxN.Unlock()
@@ -139,16 +141,11 @@ func (t *MTaskCtl) Done(channel int) {
 // 等待所有线程执行完
 func (t *MTaskCtl) Wait() {
 	t.waitGroup.Wait()
-	// for i := 0; i < CHANNEL_NUMBER; i++ {
-	// 	for t.n[i] > 0 {
-	// 		<-t.ch[i]
-	// 	}
-	// }
 }
 
-// Check在运行routine过程中执行，检查是否继续。
+// Err 在运行routine过程中执行，检查是否继续。
 // nil为正常继续，error为终止（Cancel），pause时阻塞
-func (t *MTaskCtl) Check() error {
+func (t *MTaskCtl) Err() error {
 	// 暂停时阻塞，恢复(close)后解除阻塞
 	<-t.pauseChan
 
@@ -176,6 +173,10 @@ func (t *MTaskCtl) Cancel(cause error) {
 	t.Resume()
 }
 
+func (t *MTaskCtl) UnCancel() {
+	t.cancel = nil
+}
+
 // 暂停任务
 func (t *MTaskCtl) Pause() {
 	t.mtxPause.Lock()
@@ -192,4 +193,18 @@ func (t *MTaskCtl) Resume() {
 	}
 	t.pause = false
 	t.mtxPause.Unlock()
+}
+
+// Support Context interface（不提供实际功能）
+
+func (t *MTaskCtl) Deadline() (deadline time.Time, ok bool) {
+	return
+}
+
+func (t *MTaskCtl) Value(key any) any {
+	return nil
+}
+
+func (t *MTaskCtl) Done() <-chan struct{} {
+	return nil
 }
