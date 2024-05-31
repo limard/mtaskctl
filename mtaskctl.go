@@ -2,11 +2,13 @@ package mtaskctl
 
 import (
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 )
 
 var ErrCanceled = errors.New("canceled")
+var ErrTimeout = errors.New("timeout")
 
 const CHANNEL_NUMBER = 16
 
@@ -22,6 +24,9 @@ type MTaskCtl struct {
 	pauseChan chan struct{} // 暂停时有chan造成阻塞，恢复后close解除阻塞
 	cancel    error         // 运行/取消状态
 	waitGroup sync.WaitGroup
+
+	timer   *time.Timer
+	timeout time.Time
 }
 
 func NewTaskCtl(maxs []int) *MTaskCtl {
@@ -138,13 +143,18 @@ func (t *MTaskCtl) Recycle(channel int) {
 	t.waitGroup.Done()
 }
 
-// 等待所有线程执行完
+// 等待所有线程执行完，与Done功能相同
 func (t *MTaskCtl) Wait() {
 	t.waitGroup.Wait()
 }
 
 // Err 在运行routine过程中执行，检查是否继续。
 // nil为正常继续，error为终止（Cancel），pause时阻塞
+// If Done is not yet closed, Err returns nil.
+// If Done is closed, Err returns a non-nil error explaining why:
+// Canceled if the context was canceled
+// or DeadlineExceeded if the context's deadline passed.
+// After Err returns a non-nil error, successive calls to Err return the same error.
 func (t *MTaskCtl) Err() error {
 	// 暂停时阻塞，恢复(close)后解除阻塞
 	<-t.pauseChan
@@ -161,6 +171,32 @@ func (t *MTaskCtl) Close() {
 			t.ch[i] = nil
 		}
 	}
+}
+
+func (t *MTaskCtl) Timeout(timeout time.Duration) {
+	t.timeout = time.Now().Add(timeout)
+
+	run := true
+	if t.timer == nil {
+		t.timer = time.NewTimer(timeout)
+	} else {
+		run = !t.timer.Reset(timeout)
+	}
+	if run {
+		go func() {
+			fmt.Println("in timeout")
+			tm := <-t.timer.C
+			fmt.Println("set timeout", tm)
+			t.Cancel(ErrTimeout)
+		}()
+	}
+}
+
+func (t *MTaskCtl) UnTimeout() {
+	if t.timer != nil {
+		t.timer.Stop()
+	}
+	t.timeout = time.Time{}
 }
 
 // 取消任务，cause为选填的取消原因
@@ -195,16 +231,58 @@ func (t *MTaskCtl) Resume() {
 	t.mtxPause.Unlock()
 }
 
-// Support Context interface（不提供实际功能）
+// Support Context interface
 
+// Deadline returns the time when work done on behalf of this context
+// should be canceled.  Deadline returns ok==false when no deadline is
+// set.  Successive calls to Deadline return the same results.
 func (t *MTaskCtl) Deadline() (deadline time.Time, ok bool) {
-	return
+	if t.timeout.IsZero() {
+		return time.Time{}, false
+	}
+	return t.timeout, true
 }
 
-func (t *MTaskCtl) Value(key any) any {
+func (t *MTaskCtl) Value(key interface{}) interface{} {
 	return nil
 }
 
+// Done returns a channel that's closed when work done on behalf of this
+// context should be canceled. Done may return nil if this context can
+// never be canceled. Successive calls to Done return the same value.
+// The close of the Done channel may happen asynchronously,
+// after the cancel function returns.
+//
+// WithCancel arranges for Done to be closed when cancel is called;
+// WithDeadline arranges for Done to be closed when the deadline
+// expires; WithTimeout arranges for Done to be closed when the timeout
+// elapses.
+//
+// Done is provided for use in select statements:
+//
+//	// Stream generates values with DoSomething and sends them to out
+//	// until DoSomething returns an error or ctx.Done is closed.
+//	func Stream(ctx context.Context, out chan<- Value) error {
+//		for {
+//			v, err := DoSomething(ctx)
+//			if err != nil {
+//				return err
+//			}
+//			select {
+//			case <-ctx.Done():
+//				return ctx.Err()
+//			case out <- v:
+//			}
+//		}
+//	}
+//
+// See https://blog.golang.org/pipelines for more examples of how to use
+// a Done channel for cancellation.
 func (t *MTaskCtl) Done() <-chan struct{} {
-	return nil
+	c := make(chan struct{})
+	go func() {
+		t.waitGroup.Wait()
+		c <- struct{}{}
+	}()
+	return c
 }

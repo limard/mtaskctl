@@ -127,3 +127,48 @@ func Benchmark_(b *testing.B) {
 	ctl.Close()
 	fmt.Println(cnter)
 }
+
+func Test_Timeout(t *testing.T) {
+	c := NewTaskCtl([]int{1})
+
+	go func() {
+		for i := 0; i < 20; i++ {
+			if e := c.Err(); e != nil {
+				fmt.Println(e, time.Now())
+			}
+			time.Sleep(1 * time.Second)
+		}
+	}()
+
+	c.Timeout(3 * time.Second)
+
+	time.Sleep(2 * time.Second)
+	c.UnTimeout()
+
+	c.Timeout(3 * time.Second)
+	time.Sleep(7 * time.Second)
+
+	c.UnTimeout()
+	c.UnCancel()
+
+	c.Timeout(3 * time.Second)
+	time.Sleep(7 * time.Second)
+}
+
+func Test_Done(t *testing.T) {
+	c := NewTaskCtl([]int{1})
+
+	channel, e := c.New()
+	if e != nil {
+		fmt.Println(e)
+		return
+	}
+	go func() {
+		time.Sleep(2 * time.Second)
+		c.Recycle(channel)
+	}()
+
+	fmt.Println(time.Now())
+	c.Done()
+	fmt.Println(time.Now())
+}
