@@ -15,15 +15,13 @@ const CHANNEL_NUMBER = 16
 type MTaskCtl struct {
 	max [CHANNEL_NUMBER]int // 最大并发数量
 
-	mtxN sync.Mutex
-	n    [CHANNEL_NUMBER]int           // 当前并发数量
-	ch   [CHANNEL_NUMBER]chan struct{} // 控制数量，cancel后error为非空
+	waitGroup sync.WaitGroup                // 控制整体
+	ch        [CHANNEL_NUMBER]chan struct{} // 控制各个channel的数量
 
 	mtxPause  sync.Mutex    //
 	pause     bool          // pause 暂停状态
 	pauseChan chan struct{} // 暂停时有chan造成阻塞，恢复后close解除阻塞
 	cancel    error         // 运行/取消状态
-	waitGroup sync.WaitGroup
 
 	timer   *time.Timer
 	timeout time.Time
@@ -76,6 +74,8 @@ func (t *MTaskCtl) New() (channel int, e error) {
 	}
 
 	// 等待空闲channel，或者close
+	fmt.Println("mtaskctl.new: channel wait")
+	// t.mtxCh.Lock()
 	var ok bool
 	select {
 	case _, ok = <-t.ch[0]:
@@ -111,6 +111,8 @@ func (t *MTaskCtl) New() (channel int, e error) {
 	case _, ok = <-t.ch[15]:
 		channel = 15
 	}
+	// t.mtxCh.Unlock()
+	fmt.Println("mtaskctl.new: channel", channel)
 
 	// 如果已经取消，则直接返回
 	if e = t.Err(); e != nil {
@@ -123,23 +125,19 @@ func (t *MTaskCtl) New() (channel int, e error) {
 		t.waitGroup.Done()
 		return 0, ErrCanceled
 	}
-
-	t.mtxN.Lock()
-	t.n[channel]++
-	t.mtxN.Unlock()
 	return
 }
 
 // 完成后调用
 func (t *MTaskCtl) Recycle(channel int) {
-	// fmt.Println("Done", channel)
-	t.mtxN.Lock()
-	t.n[channel]--
-	t.mtxN.Unlock()
+	fmt.Println("mtaskctl.recycle:", channel, "start")
+	// t.mtxCh.Lock()
+	// if len(t.ch[channel]) < cap(t.ch[channel]) {
+	t.ch[channel] <- struct{}{}
+	// }
+	// t.mtxCh.Unlock()
+	fmt.Println("mtaskctl.recycle:", channel, "finished")
 
-	if len(t.ch[channel]) < cap(t.ch[channel]) {
-		t.ch[channel] <- struct{}{}
-	}
 	t.waitGroup.Done()
 }
 

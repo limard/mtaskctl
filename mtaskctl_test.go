@@ -169,6 +169,6 @@ func Test_Done(t *testing.T) {
 	}()
 
 	fmt.Println(time.Now())
-	c.Done()
+	<-c.Done()
 	fmt.Println(time.Now())
 }
